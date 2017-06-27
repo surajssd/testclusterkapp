@@ -2,24 +2,22 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
-	log "github.com/Sirupsen/logrus"
-
+	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	"net/http"
-
-	"bytes"
-
-	"github.com/pkg/errors"
+	log "github.com/Sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/client-go/pkg/api/v1"
 )
@@ -302,50 +300,55 @@ func RunTests(clientset *kubernetes.Clientset) error {
 			},
 		},
 	}
-
+	var wg sync.WaitGroup
+	wg.Add(len(tests))
 	for _, test := range tests {
-		log.Infoln("Running:", test.TestName)
+		go func(test testData) {
+			defer wg.Done()
+			log.Infoln("Running:", test.TestName)
 
-		// create a namespace
-		_, err := createNS(clientset, test.Namespace)
-		if err != nil {
-			return errors.Wrapf(err, "error creating namespace")
-		}
-		log.Debugf("namespace %q created", test.Namespace)
+			// create a namespace
+			_, err := createNS(clientset, test.Namespace)
+			if err != nil {
+				log.Fatalf("error creating namespace: ", err)
+			}
+			log.Debugf("namespace %q created", test.Namespace)
 
-		// run kapp
-		convertedOutput, err := RunKapp(test.InputFiles)
-		if err != nil {
-			return errors.Wrapf(err, "error running kapp")
-		}
-		//log.Debugln(string(convertedOutput))
+			// run kapp
+			convertedOutput, err := RunKapp(test.InputFiles)
+			if err != nil {
+				log.Fatalf("error running kapp: ", err)
+			}
+			//log.Debugln(string(convertedOutput))
 
-		// run kubectl create
-		if err := RunKubeCreate(convertedOutput, test.Namespace); err != nil {
-			return errors.Wrapf(err, "error running kubectl create")
-		}
+			// run kubectl create
+			if err := RunKubeCreate(convertedOutput, test.Namespace); err != nil {
+				log.Fatalf("error running kubectl create: ", err)
+			}
 
-		// see if the pods are running
-		if err := PodsStarted(clientset, test.Namespace, test.PodStarted); err != nil {
-			return errors.Wrapf(err, "error finding running pods")
-		}
+			// see if the pods are running
+			if err := PodsStarted(clientset, test.Namespace, test.PodStarted); err != nil {
+				log.Fatalf("error finding running pods: ", err)
+			}
 
-		// get endpoints for all services
-		endPoints, err := getEndPoints(clientset, test.Namespace, test.NodePortServices)
-		if err != nil {
-			return errors.Wrapf(err, "error getting nodes")
-		}
+			// get endpoints for all services
+			endPoints, err := getEndPoints(clientset, test.Namespace, test.NodePortServices)
+			if err != nil {
+				log.Fatalf("error getting nodes: ", err)
+			}
 
-		if err := pingEndPoints(endPoints); err != nil {
-			return errors.Wrapf(err, "error pinging endpoint")
-		}
-		log.Infoln("Successfully pinged all endpoints!")
+			if err := pingEndPoints(endPoints); err != nil {
+				log.Fatalf("error pinging endpoint: ", err)
+			}
+			log.Infoln("Successfully pinged all endpoints!")
 
-		if err := clientset.CoreV1().Namespaces().Delete(test.Namespace, &metav1.DeleteOptions{}); err != nil {
-			return errors.Wrapf(err, "error deleting namespace")
-		}
-		log.Infof("Successfully deleted namespace: %q", test.Namespace)
+			if err := clientset.CoreV1().Namespaces().Delete(test.Namespace, &metav1.DeleteOptions{}); err != nil {
+				log.Fatalf("error deleting namespace: ", err)
+			}
+			log.Infof("Successfully deleted namespace: %q", test.Namespace)
+		}(test)
 	}
+	wg.Wait()
 	return nil
 }
 
