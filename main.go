@@ -4,7 +4,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -104,46 +103,25 @@ func RunKapp(files []string) ([]byte, error) {
 
 func RunKubeCreate(input []byte, namespace string) error {
 	// now deploy using cmdline kubectl
-	args := []string{"-n", namespace, "create", "-f", "-"}
-
-	kubectl := exec.Command(KubectlLoc, args...)
+	kubectl := exec.Command(KubectlLoc, "-n", namespace, "create", "-f", "-")
 	// creating pipes needed
 	kIn, err := kubectl.StdinPipe()
 	if err != nil {
 		return errors.Wrap(err, "cannot create the stdin pipe to kubectl")
 	}
-	kOut, err := kubectl.StdoutPipe()
-	if err != nil {
-		return errors.Wrap(err, "cannot create the stdout pipe to kubectl")
-	}
-	kErr, err := kubectl.StderrPipe()
-	if err != nil {
-		return errors.Wrap(err, "cannot create the stderr pipe to kubectl")
-	}
+	go func() {
+		defer kIn.Close()
+		kIn.Write(input)
+		//if _, err := kIn.Write(input); err != nil {
+		//	return errors.Wrap(err, "cannot write to the stdin of kubectl command")
+		//}
+	}()
 
-	// start process
-	if err := kubectl.Start(); err != nil {
-		return errors.Wrap(err, "cannot start running kubectl command")
-	}
-	if _, err := kIn.Write(input); err != nil {
-		return errors.Wrap(err, "cannot write to the stdin of kubectl command")
-	}
-	if err := kIn.Close(); err != nil {
-		return errors.Wrap(err, "cannot close the kubectl stdin")
-	}
-	kOutput, err := ioutil.ReadAll(kOut)
+	output, err := kubectl.CombinedOutput()
 	if err != nil {
-		return errors.Wrap(err, "error reading from the kubectl output")
+		return errors.Wrapf(err, "failed to execute, got: %s", string(output))
 	}
-	kError, err := ioutil.ReadAll(kErr)
-	if err != nil {
-		return errors.Wrap(err, "error reading from the kubectl error")
-	}
-
-	if err := kubectl.Wait(); err != nil {
-		return errors.Wrapf(err, "failed while waiting on kubectl to complete, got: %s", string(kError))
-	}
-	log.Infof("deployed in namespace: %q\n%s", namespace, string(kOutput))
+	log.Infof("deployed in namespace: %q\n%s", namespace, string(output))
 	return nil
 }
 
