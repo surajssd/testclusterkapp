@@ -1,5 +1,4 @@
-// Note: the example only works with the code within the same release/branch.
-package main
+package e2e
 
 import (
 	"bytes"
@@ -10,17 +9,19 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
+	"testing"
 	"time"
 
 	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 
-	log "github.com/Sirupsen/logrus"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	v1 "k8s.io/client-go/pkg/api/v1"
 )
+
+var KappLoc string
+var KubectlLoc string
 
 func homeDir() string {
 	if h := os.Getenv("HOME"); h != "" {
@@ -57,24 +58,21 @@ func createNS(clientset *kubernetes.Clientset, name string) (*v1.Namespace, erro
 	return clientset.CoreV1().Namespaces().Create(ns)
 }
 
-var KappLoc string
-var KubectlLoc string
-
-func FindKapp() (string, error) {
+func FindKapp(t *testing.T) (string, error) {
 	kapp, err := exec.LookPath("kapp")
 	if err != nil {
 		return "", errors.Wrap(err, "cannot find kapp")
 	}
-	log.Infof("kapp location: %s", kapp)
+	t.Logf("kapp location: %s", kapp)
 	return kapp, nil
 }
 
-func FindKubectl() (string, error) {
+func FindKubectl(t *testing.T) (string, error) {
 	kubectl, err := exec.LookPath("kubectl")
 	if err != nil {
 		return "", errors.Wrap(err, "cannot find kubectl")
 	}
-	log.Infof("kubectl location: %s", kubectl)
+	t.Logf("kubectl location: %s", kubectl)
 	return kubectl, nil
 }
 
@@ -99,7 +97,7 @@ func RunKapp(files []string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-func RunKubeCreate(input []byte, namespace string) error {
+func RunKubeCreate(t *testing.T, input []byte, namespace string) error {
 	// now deploy using cmdline kubectl
 	kubectl := exec.Command(KubectlLoc, "-n", namespace, "create", "-f", "-")
 	// creating pipes needed
@@ -119,7 +117,7 @@ func RunKubeCreate(input []byte, namespace string) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to execute, got: %s", string(output))
 	}
-	log.Infof("deployed in namespace: %q\n%s", namespace, string(output))
+	t.Logf("deployed in namespace: %q\n%s", namespace, string(output))
 	return nil
 }
 
@@ -131,7 +129,7 @@ func mapkeys(m map[string]int) []string {
 	return keys
 }
 
-func PodsStarted(clientset *kubernetes.Clientset, namespace string, podNames []string) error {
+func PodsStarted(t *testing.T, clientset *kubernetes.Clientset, namespace string, podNames []string) error {
 	// convert podNames to map
 	podUp := make(map[string]int)
 	for _, p := range podNames {
@@ -139,7 +137,7 @@ func PodsStarted(clientset *kubernetes.Clientset, namespace string, podNames []s
 	}
 
 	for {
-		log.Debugf("pods not started yet: %q", strings.Join(mapkeys(podUp), " "))
+		t.Logf("pods not started yet: %q", strings.Join(mapkeys(podUp), " "))
 
 		pods, err := clientset.CoreV1().Pods(namespace).List(metav1.ListOptions{})
 		if err != nil {
@@ -149,7 +147,7 @@ func PodsStarted(clientset *kubernetes.Clientset, namespace string, podNames []s
 		for k := range podUp {
 			for _, p := range pods.Items {
 				if strings.Contains(p.Name, k) && p.Status.Phase == v1.PodRunning {
-					log.Infof("Pod %q started!", p.Name)
+					t.Logf("Pod %q started!", p.Name)
 					delete(podUp, k)
 				}
 			}
@@ -162,14 +160,14 @@ func PodsStarted(clientset *kubernetes.Clientset, namespace string, podNames []s
 	return nil
 }
 
-func getEndPoints(clientset *kubernetes.Clientset, namespace string, svcs []ServicePort) (map[string]string, error) {
+func getEndPoints(t *testing.T, clientset *kubernetes.Clientset, namespace string, svcs []ServicePort) (map[string]string, error) {
 	// find the minikube ip
 	node, err := clientset.CoreV1().Nodes().List(metav1.ListOptions{})
 	if err != nil {
 		return nil, errors.Wrap(err, "error while listing all nodes")
 	}
 	nodeIP := node.Items[0].Status.Addresses[0].Address
-	log.Debugf("node ip address %s", nodeIP)
+	t.Logf("node ip address %s", nodeIP)
 
 	// get all running services
 	runningSvcs, err := clientset.CoreV1().Services(namespace).List(metav1.ListOptions{})
@@ -192,12 +190,11 @@ func getEndPoints(clientset *kubernetes.Clientset, namespace string, svcs []Serv
 			}
 		}
 	}
-	log.Debugf("endpoints: %#v", endpoint)
+	t.Logf("endpoints: %#v", endpoint)
 	return endpoint, nil
 }
 
-func pingEndPoints(ep map[string]string) error {
-
+func pingEndPoints(t *testing.T, ep map[string]string) error {
 	for {
 		for e, u := range ep {
 			timeout := time.Duration(5 * time.Second)
@@ -206,12 +203,12 @@ func pingEndPoints(ep map[string]string) error {
 			}
 			respose, err := client.Get(u)
 			if err != nil {
-				log.Debugf("error while making http request %q for service %q, err: %v", u, e, err)
+				t.Logf("error while making http request %q for service %q, err: %v", u, e, err)
 				time.Sleep(1 * time.Second)
 				continue
 			}
 			if respose.Status == "200 OK" {
-				log.Debugf("%q is running!", e)
+				t.Logf("%q is running!", e)
 				delete(ep, e)
 			} else {
 				return fmt.Errorf("for service %q got %q", e, respose.Status)
@@ -222,6 +219,13 @@ func pingEndPoints(ep map[string]string) error {
 		}
 	}
 	return nil
+}
+
+func deleteNamespace(t *testing.T, clientset *kubernetes.Clientset, namespace string) {
+	if err := clientset.CoreV1().Namespaces().Delete(namespace, &metav1.DeleteOptions{}); err != nil {
+		t.Logf("error deleting namespace %q: %v", namespace, err)
+	}
+	t.Logf("successfully deleted namespace: %q", namespace)
 }
 
 type ServicePort struct {
@@ -237,7 +241,20 @@ type testData struct {
 	NodePortServices []ServicePort
 }
 
-func RunTests(clientset *kubernetes.Clientset) error {
+func Test_Integration(t *testing.T) {
+	clientset, err := createClient()
+	if err != nil {
+		t.Fatalf("error getting kube client: %v", err)
+	}
+	KappLoc, err = FindKapp(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	KubectlLoc, err = FindKubectl(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	tests := []testData{
 		{
 			TestName:  "Normal Wordpress test",
@@ -311,81 +328,44 @@ func RunTests(clientset *kubernetes.Clientset) error {
 			},
 		},
 	}
-	var wg sync.WaitGroup
-	wg.Add(len(tests))
-	for _, test := range tests {
-		go func(test testData) {
-			defer wg.Done()
-			log.Infoln("Running:", test.TestName)
 
+	for _, test := range tests {
+		t.Run(test.TestName, func(t *testing.T) {
 			// create a namespace
 			_, err := createNS(clientset, test.Namespace)
 			if err != nil {
-				log.Errorf("error creating namespace: %v", err)
-				return
+				t.Fatalf("error creating namespace: %v", err)
 			}
-			log.Debugf("namespace %q created", test.Namespace)
+			t.Logf("namespace %q created", test.Namespace)
+			defer deleteNamespace(t, clientset, test.Namespace)
 
 			// run kapp
 			convertedOutput, err := RunKapp(test.InputFiles)
 			if err != nil {
-				log.Errorf("error running kapp: %v", err)
-				return
+				t.Fatalf("error running kapp: %v", err)
 			}
-			//log.Debugln(string(convertedOutput))
+			//t.Log(string(convertedOutput))
 
 			// run kubectl create
-			if err := RunKubeCreate(convertedOutput, test.Namespace); err != nil {
-				log.Errorf("error running kubectl create: %v", err)
-				return
+			if err := RunKubeCreate(t, convertedOutput, test.Namespace); err != nil {
+				t.Fatalf("error running kubectl create: %v", err)
 			}
 
 			// see if the pods are running
-			if err := PodsStarted(clientset, test.Namespace, test.PodStarted); err != nil {
-				log.Errorf("error finding running pods: %v", err)
-				return
+			if err := PodsStarted(t, clientset, test.Namespace, test.PodStarted); err != nil {
+				t.Fatalf("error finding running pods: %v", err)
 			}
 
 			// get endpoints for all services
-			endPoints, err := getEndPoints(clientset, test.Namespace, test.NodePortServices)
+			endPoints, err := getEndPoints(t, clientset, test.Namespace, test.NodePortServices)
 			if err != nil {
-				log.Errorf("error getting nodes: %v", err)
-				return
+				t.Fatalf("error getting nodes: %v", err)
 			}
 
-			if err := pingEndPoints(endPoints); err != nil {
-				log.Errorf("error pinging endpoint: %v", err)
-				return
+			if err := pingEndPoints(t, endPoints); err != nil {
+				t.Fatalf("error pinging endpoint: %v", err)
 			}
-			log.Infoln("Successfully pinged all endpoints!")
-
-			if err := clientset.CoreV1().Namespaces().Delete(test.Namespace, &metav1.DeleteOptions{}); err != nil {
-				log.Errorf("error deleting namespace: %v", err)
-				return
-			}
-			log.Infof("Successfully deleted namespace: %q", test.Namespace)
-		}(test)
-	}
-	wg.Wait()
-	return nil
-}
-
-func main() {
-	log.SetLevel(log.DebugLevel)
-	clientset, err := createClient()
-	if err != nil {
-		log.Fatalln("error getting kube client: ", err)
-	}
-	KappLoc, err = FindKapp()
-	if err != nil {
-		log.Fatalln(err)
-	}
-	KubectlLoc, err = FindKubectl()
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	if err := RunTests(clientset); err != nil {
-		log.Fatalln(err)
+			t.Logf("Successfully pinged all endpoints!")
+		})
 	}
 }
