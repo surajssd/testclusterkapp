@@ -299,6 +299,17 @@ func RunTests(clientset *kubernetes.Clientset) error {
 				{Name: "wordpress", Port: 8080},
 			},
 		},
+		{
+			TestName:  "Testing single file",
+			Namespace: "singlefile",
+			InputFiles: []string{
+				"$GOPATH/src/github.com/surajssd/kapp/examples/single_file/wordpress.yml",
+			},
+			PodStarted: []string{"wordpress"},
+			NodePortServices: []ServicePort{
+				{Name: "wordpress", Port: 8080},
+			},
+		},
 	}
 	var wg sync.WaitGroup
 	wg.Add(len(tests))
