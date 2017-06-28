@@ -310,40 +310,47 @@ func RunTests(clientset *kubernetes.Clientset) error {
 			// create a namespace
 			_, err := createNS(clientset, test.Namespace)
 			if err != nil {
-				log.Fatalf("error creating namespace: ", err)
+				log.Errorf("error creating namespace: %v", err)
+				return
 			}
 			log.Debugf("namespace %q created", test.Namespace)
 
 			// run kapp
 			convertedOutput, err := RunKapp(test.InputFiles)
 			if err != nil {
-				log.Fatalf("error running kapp: ", err)
+				log.Errorf("error running kapp: %v", err)
+				return
 			}
 			//log.Debugln(string(convertedOutput))
 
 			// run kubectl create
 			if err := RunKubeCreate(convertedOutput, test.Namespace); err != nil {
-				log.Fatalf("error running kubectl create: ", err)
+				log.Errorf("error running kubectl create: %v", err)
+				return
 			}
 
 			// see if the pods are running
 			if err := PodsStarted(clientset, test.Namespace, test.PodStarted); err != nil {
-				log.Fatalf("error finding running pods: ", err)
+				log.Errorf("error finding running pods: %v", err)
+				return
 			}
 
 			// get endpoints for all services
 			endPoints, err := getEndPoints(clientset, test.Namespace, test.NodePortServices)
 			if err != nil {
-				log.Fatalf("error getting nodes: ", err)
+				log.Errorf("error getting nodes: %v", err)
+				return
 			}
 
 			if err := pingEndPoints(endPoints); err != nil {
-				log.Fatalf("error pinging endpoint: ", err)
+				log.Errorf("error pinging endpoint: %v", err)
+				return
 			}
 			log.Infoln("Successfully pinged all endpoints!")
 
 			if err := clientset.CoreV1().Namespaces().Delete(test.Namespace, &metav1.DeleteOptions{}); err != nil {
-				log.Fatalf("error deleting namespace: ", err)
+				log.Errorf("error deleting namespace: %v", err)
+				return
 			}
 			log.Infof("Successfully deleted namespace: %q", test.Namespace)
 		}(test)
