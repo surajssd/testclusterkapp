@@ -22,6 +22,7 @@ import (
 
 var KappLoc string
 var KubectlLoc string
+var ProjectPath = "$GOPATH/src/github.com/kedgeproject/kedge/"
 
 func homeDir() string {
 	if h := os.Getenv("HOME"); h != "" {
@@ -260,8 +261,8 @@ func Test_Integration(t *testing.T) {
 			TestName:  "Normal Wordpress test",
 			Namespace: "wordpress",
 			InputFiles: []string{
-				"$GOPATH/src/github.com/surajssd/kapp/examples/wordpress/db.yaml",
-				"$GOPATH/src/github.com/surajssd/kapp/examples/wordpress/web.yaml",
+				ProjectPath + "examples/wordpress/db.yaml",
+				ProjectPath + "examples/wordpress/web.yaml",
 			},
 			PodStarted: []string{"web"},
 			NodePortServices: []ServicePort{
@@ -272,8 +273,8 @@ func Test_Integration(t *testing.T) {
 			TestName:  "Testing configMap",
 			Namespace: "configmap",
 			InputFiles: []string{
-				"$GOPATH/src/github.com/surajssd/kapp/examples/configmap/db.yaml",
-				"$GOPATH/src/github.com/surajssd/kapp/examples/configmap/web.yaml",
+				ProjectPath + "examples/configmap/db.yaml",
+				ProjectPath + "examples/configmap/web.yaml",
 			},
 			PodStarted: []string{"web"},
 			NodePortServices: []ServicePort{
@@ -284,8 +285,8 @@ func Test_Integration(t *testing.T) {
 			TestName:  "Testing customVol",
 			Namespace: "customvol",
 			InputFiles: []string{
-				"$GOPATH/src/github.com/surajssd/kapp/examples/customVol/db.yaml",
-				"$GOPATH/src/github.com/surajssd/kapp/examples/customVol/web.yaml",
+				ProjectPath + "examples/customVol/db.yaml",
+				ProjectPath + "examples/customVol/web.yaml",
 			},
 			PodStarted: []string{"web"},
 			NodePortServices: []ServicePort{
@@ -296,8 +297,8 @@ func Test_Integration(t *testing.T) {
 			TestName:  "Testing health",
 			Namespace: "health",
 			InputFiles: []string{
-				"$GOPATH/src/github.com/surajssd/kapp/examples/health/db.yaml",
-				"$GOPATH/src/github.com/surajssd/kapp/examples/health/web.yaml",
+				ProjectPath + "examples/health/db.yaml",
+				ProjectPath + "examples/health/web.yaml",
 			},
 			PodStarted: []string{"web"},
 			NodePortServices: []ServicePort{
@@ -308,8 +309,8 @@ func Test_Integration(t *testing.T) {
 			TestName:  "Testing healthChecks",
 			Namespace: "healthchecks",
 			InputFiles: []string{
-				"$GOPATH/src/github.com/surajssd/kapp/examples/healthchecks/db.yaml",
-				"$GOPATH/src/github.com/surajssd/kapp/examples/healthchecks/web.yaml",
+				ProjectPath + "examples/healthchecks/db.yaml",
+				ProjectPath + "examples/healthchecks/web.yaml",
 			},
 			PodStarted: []string{"web"},
 			NodePortServices: []ServicePort{
@@ -320,7 +321,7 @@ func Test_Integration(t *testing.T) {
 			TestName:  "Testing single file",
 			Namespace: "singlefile",
 			InputFiles: []string{
-				"$GOPATH/src/github.com/surajssd/kapp/examples/single_file/wordpress.yml",
+				ProjectPath + "examples/single_file/wordpress.yml",
 			},
 			PodStarted: []string{"wordpress"},
 			NodePortServices: []ServicePort{
@@ -330,7 +331,9 @@ func Test_Integration(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test // capture range variable
 		t.Run(test.TestName, func(t *testing.T) {
+			t.Parallel()
 			// create a namespace
 			_, err := createNS(clientset, test.Namespace)
 			if err != nil {
