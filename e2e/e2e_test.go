@@ -60,7 +60,7 @@ func createNS(clientset *kubernetes.Clientset, name string) (*v1.Namespace, erro
 }
 
 func FindKapp(t *testing.T) (string, error) {
-	kapp, err := exec.LookPath("kapp")
+	kapp, err := exec.LookPath("kedge")
 	if err != nil {
 		return "", errors.Wrap(err, "cannot find kapp")
 	}
@@ -324,6 +324,18 @@ func Test_Integration(t *testing.T) {
 				ProjectPath + "examples/single_file/wordpress.yml",
 			},
 			PodStarted: []string{"wordpress"},
+			NodePortServices: []ServicePort{
+				{Name: "wordpress", Port: 8080},
+			},
+		},
+		{
+			TestName:  "Testing envFrom",
+			Namespace: "envfrom",
+			InputFiles: []string{
+				ProjectPath + "examples/envFrom/db.yaml",
+				ProjectPath + "examples/envFrom/web.yaml",
+			},
+			PodStarted: []string{"web"},
 			NodePortServices: []ServicePort{
 				{Name: "wordpress", Port: 8080},
 			},
